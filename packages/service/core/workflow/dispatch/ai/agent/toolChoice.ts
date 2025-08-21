@@ -25,6 +25,7 @@ import type { WorkflowInteractiveResponseType } from '@fastgpt/global/core/workf
 import { ChatItemValueTypeEnum } from '@fastgpt/global/core/chat/constants';
 import { getErrText } from '@fastgpt/global/common/error/utils';
 import { createLLMResponse } from '@fastgpt/global/core/ai/request';
+import { Plan_agent_System } from './constants';
 
 type ToolRunResponseType = {
   toolRunResponse?: DispatchFlowResponse;
@@ -336,6 +337,33 @@ export const runToolWithToolChoice = async (
                   return;
                 }
 
+                if (callingTool!.name === 'plan_agent') {
+                  const toolId = getNanoid();
+                  toolCallResults[index] = {
+                    ...toolCall,
+                    id: toolId,
+                    type: 'function',
+                    function: callingTool,
+                    toolName: callingTool!.name,
+                    toolAvatar: ''
+                  };
+
+                  workflowStreamResponse?.({
+                    event: SseResponseEventEnum.toolCall,
+                    data: {
+                      tool: {
+                        id: toolId,
+                        toolName: callingTool.name ?? '',
+                        toolAvatar: '',
+                        functionName: callingTool.name,
+                        params: callingTool?.arguments ?? '',
+                        response: ''
+                      }
+                    }
+                  });
+                  callingTool = null;
+                  return;
+                }
                 const toolNode = toolNodes.find((item) => item.nodeId === callingTool!.name);
 
                 if (toolNode) {
@@ -345,7 +373,7 @@ export const runToolWithToolChoice = async (
                     ...toolCall,
                     id: toolId,
                     type: 'function',
-                    function: callingTool,
+                    function: callingTool as any,
                     toolName: toolNode.name,
                     toolAvatar: toolNode.avatar
                   };
@@ -357,7 +385,7 @@ export const runToolWithToolChoice = async (
                         id: toolId,
                         toolName: toolNode.name,
                         toolAvatar: toolNode.avatar,
-                        functionName: callingTool.name,
+                        functionName: callingTool?.name,
                         params: callingTool?.arguments ?? '',
                         response: ''
                       }
@@ -402,6 +430,27 @@ export const runToolWithToolChoice = async (
           onToolCalled({ toolCalls }) {
             // rewrite tool call results
             return toolCalls.map((tool) => {
+              if (tool.function?.name === 'plan_agent') {
+                workflowStreamResponse?.({
+                  event: SseResponseEventEnum.toolCall,
+                  data: {
+                    tool: {
+                      id: tool.id,
+                      toolName: tool.function?.name || '',
+                      toolAvatar: '',
+                      functionName: tool.function?.name,
+                      params: tool.function?.arguments ?? '',
+                      response: ''
+                    }
+                  }
+                });
+
+                return {
+                  ...tool,
+                  toolName: tool.function?.name || '',
+                  toolAvatar: ''
+                };
+              }
               const toolNode = toolNodes.find((item) => item.nodeId === tool.function?.name);
 
               // 不支持 stream 模式的模型的这里需要补一个响应给客户端
@@ -458,6 +507,60 @@ export const runToolWithToolChoice = async (
   const toolsRunResponse: ToolRunResponseType = [];
   for await (const tool of toolCalls) {
     try {
+      if (tool.function?.name === 'plan_agent') {
+        const planAgentMessages = requestMessages.map((m, index) => {
+          if (index === 0) {
+            m.content = Plan_agent_System;
+          }
+          return m;
+        });
+        const { task } = json5.parse(tool.function.arguments);
+        planAgentMessages.push({
+          role: ChatCompletionRequestMessageRoleEnum.Assistant,
+          content: task
+        });
+
+        let resBuffer = '';
+
+        const { answerText } = await createLLMResponse({
+          llmOptions: { ...requestBody, messages: planAgentMessages },
+          userKey: externalProvider.openaiAccount,
+          params: { abortSignal: res?.closed, reasoning: aiChatReasoning, retainDatasetCite },
+          events: {
+            streamEvents: {
+              onStreaming({ responseContent }) {
+                resBuffer += responseContent;
+                workflowStreamResponse?.({
+                  event: SseResponseEventEnum.toolResponse,
+                  data: {
+                    tool: {
+                      id: tool.id,
+                      toolName: '',
+                      toolAvatar: '',
+                      params: '',
+                      response: sliceStrStartEnd(resBuffer, 5000, 5000)
+                    }
+                  }
+                });
+              }
+            }
+          }
+        });
+
+        const toolMsgParams: ChatCompletionToolMessageParam = {
+          tool_call_id: tool.id,
+          role: ChatCompletionRequestMessageRoleEnum.Tool,
+          name: tool.function.name,
+          content: answerText
+        };
+
+        toolsRunResponse.push({
+          toolMsgParams
+        });
+
+        continue;
+      }
+
       const toolNode = toolNodes.find((item) => item.nodeId === tool.function?.name);
 
       if (!toolNode) continue;

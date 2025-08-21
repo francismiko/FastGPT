@@ -123,13 +123,29 @@ type CompleteResopnse = Pick<
 };
 
 export const createLLMResponse = async (args: CreateLLMResponseProps): Promise<LLMResponse> => {
-  const { llmOptions, toolCallOptions = { mode: 'function' }, userKey, params, events } = args;
+  const { llmOptions, toolCallOptions, userKey, params, events } = args;
 
   const toolItems: ChatCompletionTool[] = [];
   let toolsPrompt: string = '';
 
   if (toolCallOptions) {
     const { mode, toolNodes, tools } = toolCallOptions;
+    toolItems.push({
+      type: 'function',
+      function: {
+        name: 'plan_agent',
+        description: '专门用于创建和更新研究计划及 todo list 的 agent',
+        parameters: {
+          type: 'object',
+          properties: {
+            task: {
+              type: 'string'
+            }
+          },
+          required: ['task']
+        }
+      }
+    });
     if (toolNodes) {
       toolItems.push(
         ...toolNodes.map((item) => {
