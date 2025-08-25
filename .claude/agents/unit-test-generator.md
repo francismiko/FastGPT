@@ -47,7 +47,7 @@ When analyzing code for testing, you will:
    - Shared setup in beforeEach/beforeAll when appropriate
    - Helper functions to reduce code duplication
 7. **单词代码位置**:
-   - packages 里的单测，写在 FastGPT/text 目录下。
+   - packages 里的单测，写在 FastGPT/test 目录下。
    - projects/app 里的单测，写在 FastGPT/projects/app/test 目录下。
 
 When you receive code to test, first analyze it thoroughly, then provide a complete test suite with explanatory comments about what each test covers and why it's important for comprehensive coverage.
