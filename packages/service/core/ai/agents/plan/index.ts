@@ -1,167 +1,88 @@
 import type { ChatCompletionMessageParam } from '@fastgpt/global/core/ai/type.d';
 import { addLog } from '../../../../common/system/log';
 import { createLLMResponse } from '../../llm/request';
-import { generatePlanPrompt, modifyPlanPrompt } from './prompt';
-import { parsePlanResponse, formatPlanContent } from './utils';
+import { defaultGeneratePlanPrompt } from './prompt';
+import { ChatCompletionRequestMessageRoleEnum } from '@fastgpt/global/core/ai/constants';
+import type { WorkflowResponseType } from 'core/workflow/dispatch/type';
+import { SseResponseEventEnum } from '@fastgpt/global/core/workflow/runtime/constants';
 
-export interface PlanStep {
-  title: string;
-  description?: string;
-  todos: string[];
-}
+type PlanAgentToolArgs = {
+  instruction: string;
+};
 
-export interface TaskPlan {
-  title: string;
-  description?: string;
-  steps: PlanStep[];
-}
-
-export interface GeneratePlanParams {
-  task: string;
-  context?: string;
+type transferPlanAgentProps = {
   model: string;
-  customPrompt?: string;
-}
+  toolId: string;
+  toolArgs: PlanAgentToolArgs;
+  sharedContext: ChatCompletionMessageParam[];
+  customSystemPrompt?: string;
+  workflowStreamResponse?: WorkflowResponseType;
+};
 
-export interface ModifyPlanParams {
-  currentPlan: string;
-  modification: string;
-  model: string;
-  customPrompt?: string;
-}
-
-export async function generateTaskPlan({
-  task,
-  context,
+export async function transferPlanAgent({
   model,
-  customPrompt
-}: GeneratePlanParams): Promise<{
-  plan: TaskPlan;
-  markdown: string;
+  toolId,
+  toolArgs,
+  sharedContext,
+  customSystemPrompt,
+  workflowStreamResponse
+}: transferPlanAgentProps): Promise<{
+  content: string;
   inputTokens: number;
   outputTokens: number;
 }> {
-  const messages: ChatCompletionMessageParam[] = [
-    {
-      role: 'user',
-      content: generatePlanPrompt({
-        task,
-        context,
-        customPrompt
-      })
-    }
-  ];
-
-  const {
-    answerText: answer,
-    usage: { inputTokens, outputTokens }
-  } = await createLLMResponse({
-    body: {
-      model,
-      temperature: 0.1,
-      max_tokens: 2000,
-      messages,
-      stream: true
-    }
-  });
-
-  if (!answer) {
-    return {
-      plan: { title: task, steps: [] },
-      markdown: '',
-      inputTokens,
-      outputTokens
-    };
-  }
+  const { instruction } = toolArgs;
 
   try {
-    const plan = parsePlanResponse(answer);
-    const markdown = formatPlanContent(plan);
+    const messages: ChatCompletionMessageParam[] = [
+      {
+        role: ChatCompletionRequestMessageRoleEnum.System,
+        content: customSystemPrompt || defaultGeneratePlanPrompt
+      },
+      ...sharedContext.filter((item) => item.role !== 'system'),
+      {
+        role: 'user',
+        content: instruction
+      }
+    ];
+
+    const {
+      answerText,
+      usage: { inputTokens, outputTokens }
+    } = await createLLMResponse({
+      body: {
+        model,
+        temperature: 0,
+        messages,
+        stream: true
+      },
+      onStreaming({ fullText }) {
+        workflowStreamResponse?.({
+          event: SseResponseEventEnum.toolResponse,
+          data: {
+            tool: {
+              id: toolId,
+              toolName: '',
+              toolAvatar: '',
+              params: '',
+              response: fullText
+            }
+          }
+        });
+      }
+    });
 
     return {
-      plan,
-      markdown,
+      content: answerText,
       inputTokens,
       outputTokens
     };
   } catch (error) {
-    addLog.warn('Generate task plan failed', {
-      answer,
-      error
-    });
+    addLog.warn('call plan_agent failed');
     return {
-      plan: { title: task, steps: [] },
-      markdown: answer,
-      inputTokens,
-      outputTokens
-    };
-  }
-}
-
-export async function modifyTaskPlan({
-  currentPlan,
-  modification,
-  model,
-  customPrompt
-}: ModifyPlanParams): Promise<{
-  plan: TaskPlan;
-  markdown: string;
-  inputTokens: number;
-  outputTokens: number;
-}> {
-  const messages: ChatCompletionMessageParam[] = [
-    {
-      role: 'user',
-      content: modifyPlanPrompt({
-        currentPlan,
-        modification,
-        customPrompt
-      })
-    }
-  ];
-
-  const {
-    answerText: answer,
-    usage: { inputTokens, outputTokens }
-  } = await createLLMResponse({
-    body: {
-      model,
-      temperature: 0.1,
-      max_tokens: 2000,
-      messages,
-      stream: true
-    }
-  });
-
-  if (!answer) {
-    return {
-      plan: { title: '', steps: [] },
-      markdown: currentPlan,
-      inputTokens,
-      outputTokens
-    };
-  }
-
-  try {
-    const plan = parsePlanResponse(answer);
-    const markdown = formatPlanContent(plan);
-
-    return {
-      plan,
-      markdown,
-      inputTokens,
-      outputTokens
-    };
-  } catch (error) {
-    addLog.warn('Modify task plan failed', {
-      answer,
-      error
-    });
-    return {
-      plan: { title: '', steps: [] },
-      markdown: answer,
-      inputTokens,
-      outputTokens
+      content: '',
+      inputTokens: 0,
+      outputTokens: 0
     };
   }
 }

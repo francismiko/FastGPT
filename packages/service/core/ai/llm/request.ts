@@ -27,7 +27,7 @@ import { getErrText } from '@fastgpt/global/common/error/utils';
 import json5 from 'json5';
 
 type ResponseEvents = {
-  onStreaming?: ({ text }: { text: string }) => void;
+  onStreaming?: ({ text, fullText }: { text: string; fullText: string }) => void;
   onReasoning?: ({ text }: { text: string }) => void;
   onToolCall?: ({ call }: { call: ChatCompletionMessageToolCall }) => void;
   onToolParam?: ({ tool, params }: { tool: ChatCompletionMessageToolCall; params: string }) => void;
@@ -195,6 +195,7 @@ export const createStreamResponse = async ({
     if (toolCallMode === 'toolChoice') {
       let callingTool: ChatCompletionMessageToolCall['function'] | null = null;
       const toolCalls: ChatCompletionMessageToolCall[] = [];
+      let fullText = '';
 
       for await (const part of response) {
         if (isAborted?.()) {
@@ -213,7 +214,8 @@ export const createStreamResponse = async ({
           onReasoning?.({ text: reasoningContent });
         }
         if (responseContent) {
-          onStreaming?.({ text: responseContent });
+          fullText += responseContent;
+          onStreaming?.({ text: responseContent, fullText });
         }
 
         const responseChoice = part.choices?.[0]?.delta;
@@ -297,7 +299,7 @@ export const createStreamResponse = async ({
         if (content) {
           if (startResponseWrite) {
             if (responseContent) {
-              onStreaming?.({ text: responseContent });
+              onStreaming?.({ text: responseContent, fullText: answer });
             }
           } else if (answer.length >= 3) {
             answer = answer.trimStart();
@@ -311,7 +313,7 @@ export const createStreamResponse = async ({
                 answer.indexOf('0:') !== -1 ? answer.indexOf('0:') : answer.indexOf('0：');
               answer = answer.substring(firstIndex + 2).trim();
 
-              onStreaming?.({ text: answer });
+              onStreaming?.({ text: answer, fullText: answer });
             }
             // Not response tool
             else if (/1(:|：)/.test(answer)) {
@@ -319,7 +321,7 @@ export const createStreamResponse = async ({
             // Not start 1/0, start response
             else {
               startResponseWrite = true;
-              onStreaming?.({ text: answer });
+              onStreaming?.({ text: answer, fullText: answer });
             }
           }
         }
@@ -342,6 +344,7 @@ export const createStreamResponse = async ({
     }
   } else {
     // Not use tool
+    let fullText = '';
     for await (const part of response) {
       if (isAborted?.()) {
         response.controller?.abort();
@@ -359,7 +362,8 @@ export const createStreamResponse = async ({
         onReasoning?.({ text: reasoningContent });
       }
       if (responseContent) {
-        onStreaming?.({ text: responseContent });
+        fullText += responseContent;
+        onStreaming?.({ text: responseContent, fullText });
       }
     }
 
@@ -438,7 +442,7 @@ export const createCompleteResponse = async ({
     onReasoning?.({ text: formatReasonContent });
   }
   if (formatContent) {
-    onStreaming?.({ text: formatContent });
+    onStreaming?.({ text: formatContent, fullText: formatContent });
   }
   if (toolCalls?.length && onToolCall) {
     toolCalls.forEach((call) => {

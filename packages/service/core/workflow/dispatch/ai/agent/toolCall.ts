@@ -22,6 +22,7 @@ import { ChatItemValueTypeEnum } from '@fastgpt/global/core/chat/constants';
 import { getErrText } from '@fastgpt/global/common/error/utils';
 import { createLLMResponse } from '../../../../ai/llm/request';
 import { toolValueTypeList, valueTypeJsonSchemaMap } from '@fastgpt/global/core/workflow/constants';
+import { transferPlanAgent } from '../../../../../core/ai/agents/plan';
 
 type ToolRunResponseType = {
   toolRunResponse?: DispatchFlowResponse;
@@ -246,6 +247,24 @@ export const runToolCall = async (
     };
   });
 
+  tools.push({
+    type: 'function',
+    function: {
+      name: 'plan_agent',
+      description: '专门处理计划表的智能体, 可以新建或者更新计划表',
+      parameters: {
+        type: 'object',
+        properties: {
+          instruction: {
+            type: 'string',
+            description: '本次要进行的操作说明'
+          }
+        },
+        required: ['instruction']
+      }
+    }
+  });
+
   const max_tokens = computedMaxToken({
     model: toolModel,
     maxToken,
@@ -327,14 +346,15 @@ export const runToolCall = async (
     },
     onToolCall({ call }) {
       const toolNode = toolNodesMap.get(call.function.name);
-      if (toolNode) {
+
+      if (call.function.name === 'plan_agent' || toolNode) {
         workflowStreamResponse?.({
           event: SseResponseEventEnum.toolCall,
           data: {
             tool: {
               id: call.id,
-              toolName: toolNode.name,
-              toolAvatar: toolNode.avatar,
+              toolName: toolNode?.name || call.function.name,
+              toolAvatar: toolNode?.avatar || '',
               functionName: call.function.name,
               params: call.function.arguments ?? '',
               response: ''
@@ -372,23 +392,43 @@ export const runToolCall = async (
     try {
       const toolNode = toolNodesMap.get(tool.function?.name);
 
-      if (!toolNode) continue;
+      if (!toolNode && tool.function?.name !== 'plan_agent') {
+        continue;
+      }
 
-      const startParams = (() => {
+      let toolRunResponse = null;
+      let stringToolResponse = '';
+
+      const toolArgs = (() => {
         try {
-          return json5.parse(tool.function.arguments);
+          return json5.parse(tool.function?.arguments || '{}');
         } catch (error) {
+          console.error('Failed to parse tool arguments:', error);
           return {};
         }
       })();
 
-      initToolNodes(runtimeNodes, [toolNode.nodeId], startParams);
-      const toolRunResponse = await dispatchWorkFlow({
-        ...workflowProps,
-        isToolCall: true
-      });
-
-      const stringToolResponse = formatToolResponse(toolRunResponse.toolResponses);
+      if (!toolNode && tool.function?.name === 'plan_agent') {
+        stringToolResponse = (
+          await transferPlanAgent({
+            model: toolModel.model,
+            toolId: tool.id,
+            toolArgs: {
+              instruction: toolArgs.instruction || ''
+            },
+            sharedContext: filterMessages,
+            customSystemPrompt: '',
+            workflowStreamResponse
+          })
+        ).content;
+      } else if (toolNode) {
+        initToolNodes(runtimeNodes, [toolNode.nodeId], toolArgs);
+        toolRunResponse = await dispatchWorkFlow({
+          ...workflowProps,
+          isToolCall: true
+        });
+        stringToolResponse = formatToolResponse(toolRunResponse.toolResponses);
+      }
 
       const toolMsgParams: ChatCompletionToolMessageParam = {
         tool_call_id: tool.id,
@@ -411,7 +451,7 @@ export const runToolCall = async (
       });
 
       toolsRunResponse.push({
-        toolRunResponse,
+        ...(toolRunResponse && { toolRunResponse }),
         toolMsgParams
       });
     } catch (error) {
