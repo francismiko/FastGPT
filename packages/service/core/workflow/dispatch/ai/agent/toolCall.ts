@@ -22,7 +22,7 @@ import { ChatItemValueTypeEnum } from '@fastgpt/global/core/chat/constants';
 import { getErrText } from '@fastgpt/global/common/error/utils';
 import { createLLMResponse } from '../../../../ai/llm/request';
 import { toolValueTypeList, valueTypeJsonSchemaMap } from '@fastgpt/global/core/workflow/constants';
-import { transferPlanAgent } from '../../../../../core/ai/agents/plan';
+import { transferPlanAgent } from '../../../../ai/agents/plan';
 
 type ToolRunResponseType = {
   toolRunResponse?: DispatchFlowResponse;
