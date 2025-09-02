@@ -72,8 +72,11 @@ export const runAgentCall = async (props: RunAgentCallProps): Promise<RunAgentRe
   const toolNodesMap = new Map<string, ToolNodeItemType>(
     toolNodes.map((item) => [item.nodeId, item])
   );
+  const builtinToolMap = new Map<string, ChatCompletionTool>(
+    createBuiltinTools().map((item) => [item.function.name, item])
+  );
   const tools: ChatCompletionTool[] = [
-    // ...createBuiltinTools(),
+    ...createBuiltinTools(),
     ...createToolFromToolNodes(toolNodes)
   ];
 
@@ -196,7 +199,8 @@ export const runAgentCall = async (props: RunAgentCallProps): Promise<RunAgentRe
       },
       onToolCall({ call }) {
         const toolNode = toolNodesMap.get(call.function.name);
-        if (!toolNode) return;
+        const builtinTool = builtinToolMap.get(call.function.name);
+        if (!toolNode && !builtinTool) return;
         workflowStreamResponse?.({
           event: SseResponseEventEnum.toolCall,
           data: {
@@ -387,24 +391,24 @@ const createToolFromToolNodes = (toolNodes: ToolNodeItemType[]): ChatCompletionT
   });
 };
 
-// const createBuiltinTools = (): ChatCompletionTool[] => {
-//   return [
-//     {
-//       type: 'function',
-//       function: {
-//         name: 'plan_agent',
-//         description: '',
-//         parameters: {
-//           type: 'object',
-//           properties: {
-//             instruction: {
-//               type: 'string',
-//               description: ''
-//             }
-//           },
-//           required: ['instruction']
-//         }
-//       }
-//     }
-//   ];
-// };
+const createBuiltinTools = (): ChatCompletionTool[] => {
+  const planAgentTool: ChatCompletionTool = {
+    type: 'function',
+    function: {
+      name: 'plan_agent',
+      description: '',
+      parameters: {
+        type: 'object',
+        properties: {
+          instruction: {
+            type: 'string',
+            description: ''
+          }
+        },
+        required: ['instruction']
+      }
+    }
+  };
+
+  return [planAgentTool];
+};
