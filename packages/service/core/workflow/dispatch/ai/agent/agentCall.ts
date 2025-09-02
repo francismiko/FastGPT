@@ -23,6 +23,7 @@ import type { RunAgentResponse } from './type';
 import type { ExternalProviderType } from '@fastgpt/global/core/workflow/runtime/type';
 import type { LLMModelItemType } from '@fastgpt/global/core/ai/model.d';
 import type { NextApiResponse } from 'next/types';
+import { createBuiltinTools } from './constants';
 
 type ToolRunResponseType = {
   toolRunResponse?: DispatchFlowResponse;
@@ -389,26 +390,4 @@ const createToolFromToolNodes = (toolNodes: ToolNodeItemType[]): ChatCompletionT
       }
     };
   });
-};
-
-const createBuiltinTools = (): ChatCompletionTool[] => {
-  const planAgentTool: ChatCompletionTool = {
-    type: 'function',
-    function: {
-      name: 'plan_agent',
-      description: '',
-      parameters: {
-        type: 'object',
-        properties: {
-          instruction: {
-            type: 'string',
-            description: ''
-          }
-        },
-        required: ['instruction']
-      }
-    }
-  };
-
-  return [planAgentTool];
 };

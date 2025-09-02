@@ -1,3 +1,5 @@
+import type { ChatCompletionTool } from '@fastgpt/global/core/ai/type';
+
 export const getTopAgentDefaultPrompt = () => {
   return `你是一位Supervisor Agent，具备以下核心能力：
 
@@ -22,4 +24,28 @@ export const getTopAgentDefaultPrompt = () => {
 - 遇到错误时要有容错和重试机制
 
 请始终保持专业、准确、有条理的回答风格，确保用户能够清楚了解执行进度和结果。`;
+};
+
+export const createBuiltinTools = (): ChatCompletionTool[] => {
+  const planAgentTool: ChatCompletionTool = {
+    type: 'function',
+    function: {
+      name: 'plan_agent',
+      description: '',
+      parameters: {
+        type: 'object',
+        properties: {
+          instruction: {
+            type: 'string',
+            description: ''
+          }
+        },
+        required: ['instruction']
+      }
+    }
+  };
+
+  // const AskTool: ChatCompletionTool = {};
+
+  return [planAgentTool];
 };
